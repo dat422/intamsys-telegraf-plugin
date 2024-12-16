@@ -1,6 +1,6 @@
 //go:generate ../../../tools/config_includer/generator
 //go:generate ../../../tools/readme_config_includer/generator
-package http_intamsys
+package intamsys
 
 import (
 	"compress/gzip"
