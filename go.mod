@@ -1,5 +1,5 @@
 module github.com/dat422/intamsys-telegraf-plugin
 
-go 1.14
+go 1.23
 
-require github.com/influxdata/telegraf v1.15.2
+require github.com/influxdata/telegraf v1.33.0
