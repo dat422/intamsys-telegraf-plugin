@@ -1,8 +1,9 @@
 //go:generate ../../../tools/config_includer/generator
 //go:generate ../../../tools/readme_config_includer/generator
-package http
+package http_intamsys
 
 import (
+	"compress/gzip"
 	"context"
 	_ "embed"
 	"errors"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal"
 	common_http "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
@@ -24,6 +24,8 @@ import (
 var sampleConfig string
 
 var once sync.Once
+
+const noMetricsCreatedMsg = "no metrics were created"
 
 type HTTP struct {
 	URLs            []string `toml:"urls"`
@@ -114,14 +116,6 @@ func (h *HTTP) Stop() {
 }
 
 // Gathers data from a particular URL
-// Parameters:
-//
-//	acc    : The telegraf Accumulator to use
-//	url    : endpoint to send request to
-//
-// Returns:
-//
-//	error: Any error that may have occurred
 func (h *HTTP) gatherURL(acc telegraf.Accumulator, url string) error {
 	body := makeRequestBodyReader(h.ContentEncoding, h.Body)
 	request, err := http.NewRequest(h.Method, url, body)
@@ -208,7 +202,7 @@ func (h *HTTP) gatherURL(acc telegraf.Accumulator, url string) error {
 
 	if len(metrics) == 0 {
 		once.Do(func() {
-			h.Log.Debug(internal.NoMetricsCreatedMsg)
+			h.Log.Debug(noMetricsCreatedMsg)
 		})
 	}
 
@@ -251,10 +245,21 @@ func makeRequestBodyReader(contentEncoding, body string) io.Reader {
 
 	var reader io.Reader = strings.NewReader(body)
 	if contentEncoding == "gzip" {
-		return internal.CompressWithGzip(reader)
+		return compressWithGzip(reader)
 	}
 
 	return reader
+}
+
+func compressWithGzip(reader io.Reader) io.Reader {
+	pr, pw := io.Pipe()
+	go func() {
+		gz := gzip.NewWriter(pw)
+		_, err := io.Copy(gz, reader)
+		gz.Close()
+		pw.CloseWithError(err)
+	}()
+	return pr
 }
 
 func init() {
