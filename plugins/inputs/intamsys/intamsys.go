@@ -263,7 +263,7 @@ func compressWithGzip(reader io.Reader) io.Reader {
 }
 
 func init() {
-	inputs.Add("http", func() telegraf.Input {
+	inputs.Add("intamsys", func() telegraf.Input {
 		return &HTTP{
 			Method: "GET",
 		}
