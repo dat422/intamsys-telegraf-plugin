@@ -142,6 +142,9 @@ func (h *intamsys) prepareURL(originalURL string) (string, error) {
 		}
 		defer tokenSecret.Destroy()
 
+		// DEBUGGING: Print the query token to stdout
+		fmt.Printf("DEBUG: Query Token Retrieved: %s\n", tokenSecret.String())
+
 		// Get query parameters
 		query := parsedURL.Query()
 		
