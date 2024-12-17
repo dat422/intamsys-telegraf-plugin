@@ -27,7 +27,7 @@ var once sync.Once
 
 const noMetricsCreatedMsg = "no metrics were created"
 
-type HTTP struct {
+type intamsys struct {
 	URLs            []string `toml:"urls"`
 	Method          string   `toml:"method"`
 	Body            string   `toml:"body"`
@@ -52,11 +52,11 @@ type HTTP struct {
 	parserFunc telegraf.ParserFunc
 }
 
-func (*HTTP) SampleConfig() string {
+func (*intamsys) SampleConfig() string {
 	return sampleConfig
 }
 
-func (h *HTTP) Init() error {
+func (h *intamsys) Init() error {
 	// For backward compatibility
 	if h.TokenFile != "" && h.BearerToken != "" && h.TokenFile != h.BearerToken {
 		return errors.New("conflicting settings for 'bearer_token' and 'token_file'")
@@ -84,15 +84,15 @@ func (h *HTTP) Init() error {
 	return nil
 }
 
-func (h *HTTP) SetParserFunc(fn telegraf.ParserFunc) {
+func (h *intamsys) SetParserFunc(fn telegraf.ParserFunc) {
 	h.parserFunc = fn
 }
 
-func (h *HTTP) Start(_ telegraf.Accumulator) error {
+func (h *intamsys) Start(_ telegraf.Accumulator) error {
 	return nil
 }
 
-func (h *HTTP) Gather(acc telegraf.Accumulator) error {
+func (h *intamsys) Gather(acc telegraf.Accumulator) error {
 	var wg sync.WaitGroup
 	for _, u := range h.URLs {
 		wg.Add(1)
@@ -109,14 +109,14 @@ func (h *HTTP) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (h *HTTP) Stop() {
+func (h *intamsys) Stop() {
 	if h.client != nil {
 		h.client.CloseIdleConnections()
 	}
 }
 
 // Gathers data from a particular URL
-func (h *HTTP) gatherURL(acc telegraf.Accumulator, url string) error {
+func (h *intamsys) gatherURL(acc telegraf.Accumulator, url string) error {
 	body := makeRequestBodyReader(h.ContentEncoding, h.Body)
 	request, err := http.NewRequest(h.Method, url, body)
 	if err != nil {
@@ -216,7 +216,7 @@ func (h *HTTP) gatherURL(acc telegraf.Accumulator, url string) error {
 	return nil
 }
 
-func (h *HTTP) setRequestAuth(request *http.Request) error {
+func (h *intamsys) setRequestAuth(request *http.Request) error {
 	if h.Username.Empty() && h.Password.Empty() {
 		return nil
 	}
@@ -264,7 +264,7 @@ func compressWithGzip(reader io.Reader) io.Reader {
 
 func init() {
 	inputs.Add("intamsys", func() telegraf.Input {
-		return &HTTP{
+		return &intamsys{
 			Method: "GET",
 		}
 	})
