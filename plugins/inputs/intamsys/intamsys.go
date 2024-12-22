@@ -16,8 +16,6 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-
-	//"github.com/influxdata/telegraf/internal"
 	common_http "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
@@ -27,9 +25,9 @@ var sampleConfig string
 
 var once sync.Once
 
-const NoMetricsCreatedMsg = "No metrics were created from a message. Verify your parser settings. This message is only printed once."
+const noMetricsCreatedMsg = "no metrics were created"
 
-type INTAMSYS struct {
+type intamsys struct {
 	URLs            []string `toml:"urls"`
 	Method          string   `toml:"method"`
 	Body            string   `toml:"body"`
@@ -54,11 +52,11 @@ type INTAMSYS struct {
 	parserFunc telegraf.ParserFunc
 }
 
-func (*INTAMSYS) SampleConfig() string {
+func (*intamsys) SampleConfig() string {
 	return sampleConfig
 }
 
-func (h *INTAMSYS) Init() error {
+func (h *intamsys) Init() error {
 	// For backward compatibility
 	if h.TokenFile != "" && h.BearerToken != "" && h.TokenFile != h.BearerToken {
 		return errors.New("conflicting settings for 'bearer_token' and 'token_file'")
@@ -86,15 +84,15 @@ func (h *INTAMSYS) Init() error {
 	return nil
 }
 
-func (h *INTAMSYS) SetParserFunc(fn telegraf.ParserFunc) {
+func (h *intamsys) SetParserFunc(fn telegraf.ParserFunc) {
 	h.parserFunc = fn
 }
 
-func (h *INTAMSYS) Start(_ telegraf.Accumulator) error {
+func (h *intamsys) Start(_ telegraf.Accumulator) error {
 	return nil
 }
 
-func (h *INTAMSYS) Gather(acc telegraf.Accumulator) error {
+func (h *intamsys) Gather(acc telegraf.Accumulator) error {
 	var wg sync.WaitGroup
 	for _, u := range h.URLs {
 		wg.Add(1)
@@ -111,22 +109,14 @@ func (h *INTAMSYS) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (h *INTAMSYS) Stop() {
+func (h *intamsys) Stop() {
 	if h.client != nil {
 		h.client.CloseIdleConnections()
 	}
 }
 
 // Gathers data from a particular URL
-// Parameters:
-//
-//	acc    : The telegraf Accumulator to use
-//	url    : endpoint to send request to
-//
-// Returns:
-//
-//	error: Any error that may have occurred
-func (h *INTAMSYS) gatherURL(acc telegraf.Accumulator, url string) error {
+func (h *intamsys) gatherURL(acc telegraf.Accumulator, url string) error {
 	body := makeRequestBodyReader(h.ContentEncoding, h.Body)
 	request, err := http.NewRequest(h.Method, url, body)
 	if err != nil {
@@ -212,7 +202,7 @@ func (h *INTAMSYS) gatherURL(acc telegraf.Accumulator, url string) error {
 
 	if len(metrics) == 0 {
 		once.Do(func() {
-			h.Log.Debug(NoMetricsCreatedMsg)
+			h.Log.Debug(noMetricsCreatedMsg)
 		})
 	}
 
@@ -226,7 +216,7 @@ func (h *INTAMSYS) gatherURL(acc telegraf.Accumulator, url string) error {
 	return nil
 }
 
-func (h *INTAMSYS) setRequestAuth(request *http.Request) error {
+func (h *intamsys) setRequestAuth(request *http.Request) error {
 	if h.Username.Empty() && h.Password.Empty() {
 		return nil
 	}
@@ -248,36 +238,6 @@ func (h *INTAMSYS) setRequestAuth(request *http.Request) error {
 	return nil
 }
 
-func CompressWithGzip(data io.Reader) io.ReadCloser {
-	pipeReader, pipeWriter := io.Pipe()
-	gzipWriter := gzip.NewWriter(pipeWriter)
-
-	// Start copying from the uncompressed reader to the output reader
-	// in the background until the input reader is closed (or errors out).
-	go func() {
-		// This copy will block until "data" reached EOF or an error occurs
-		_, err := io.Copy(gzipWriter, data)
-
-		// Close the compression writer and make sure we do not overwrite
-		// the copy error if any.
-		gzipErr := gzipWriter.Close()
-		if err == nil {
-			err = gzipErr
-		}
-
-		// Subsequent reads from the output reader (connected to "pipeWriter"
-		// via pipe) will return the copy (or closing) error if any to the
-		// instance reading from the reader returned by the CompressWithGzip
-		// function. If "err" is nil, the below function will correctly report
-		// io.EOF.
-		pipeWriter.CloseWithError(err)
-	}()
-
-	// Return a reader which then can be read by the caller to collect the
-	// compressed stream.
-	return pipeReader
-}
-
 func makeRequestBodyReader(contentEncoding, body string) io.Reader {
 	if body == "" {
 		return nil
@@ -285,15 +245,26 @@ func makeRequestBodyReader(contentEncoding, body string) io.Reader {
 
 	var reader io.Reader = strings.NewReader(body)
 	if contentEncoding == "gzip" {
-		return CompressWithGzip(reader)
+		return compressWithGzip(reader)
 	}
 
 	return reader
 }
 
+func compressWithGzip(reader io.Reader) io.Reader {
+	pr, pw := io.Pipe()
+	go func() {
+		gz := gzip.NewWriter(pw)
+		_, err := io.Copy(gz, reader)
+		gz.Close()
+		pw.CloseWithError(err)
+	}()
+	return pr
+}
+
 func init() {
-	inputs.Add("http", func() telegraf.Input {
-		return &INTAMSYS{
+	inputs.Add("intamsys", func() telegraf.Input {
+		return &intamsys{
 			Method: "GET",
 		}
 	})
