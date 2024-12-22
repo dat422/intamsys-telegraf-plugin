@@ -3,20 +3,20 @@
 package intamsys
 
 import (
-	"compress/gzip"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
+
+	//"github.com/influxdata/telegraf/internal"
 	common_http "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
@@ -26,30 +26,24 @@ var sampleConfig string
 
 var once sync.Once
 
-const noMetricsCreatedMsg = "no metrics were created"
-
-type intamsys struct {
-	URLs            []string toml:"urls"
-	Method          string   toml:"method"
-	Body            string   toml:"body"
-	ContentEncoding string   toml:"content_encoding"
-
-	// Query parameter from secret
-	QueryToken config.Secret toml:"query_token"
-	QueryKey   string        toml:"query_key"
+type INTAMSYS struct {
+	URLs            []string `toml:"urls"`
+	Method          string   `toml:"method"`
+	Body            string   `toml:"body"`
+	ContentEncoding string   `toml:"content_encoding"`
 
 	// Basic authentication
-	Username config.Secret toml:"username"
-	Password config.Secret toml:"password"
+	Username config.Secret `toml:"username"`
+	Password config.Secret `toml:"password"`
 
 	// Bearer authentication
-	BearerToken string        toml:"bearer_token" deprecated:"1.28.0;1.35.0;use 'token_file' instead"
-	Token       config.Secret toml:"token"
-	TokenFile   string        toml:"token_file"
+	BearerToken string        `toml:"bearer_token" deprecated:"1.28.0;1.35.0;use 'token_file' instead"`
+	Token       config.Secret `toml:"token"`
+	TokenFile   string        `toml:"token_file"`
 
-	Headers            map[string]*config.Secret toml:"headers"
-	SuccessStatusCodes []int                     toml:"success_status_codes"
-	Log                telegraf.Logger           toml:"-"
+	Headers            map[string]*config.Secret `toml:"headers"`
+	SuccessStatusCodes []int                     `toml:"success_status_codes"`
+	Log                telegraf.Logger           `toml:"-"`
 
 	common_http.HTTPClientConfig
 
@@ -57,11 +51,11 @@ type intamsys struct {
 	parserFunc telegraf.ParserFunc
 }
 
-func (*intamsys) SampleConfig() string {
+func (*INTAMSYS) SampleConfig() string {
 	return sampleConfig
 }
 
-func (h *intamsys) Init() error {
+func (h *INTAMSYS) Init() error {
 	// For backward compatibility
 	if h.TokenFile != "" && h.BearerToken != "" && h.TokenFile != h.BearerToken {
 		return errors.New("conflicting settings for 'bearer_token' and 'token_file'")
@@ -72,11 +66,6 @@ func (h *intamsys) Init() error {
 	// We cannot use multiple sources for tokens
 	if h.TokenFile != "" && !h.Token.Empty() {
 		return errors.New("either use 'token_file' or 'token' not both")
-	}
-
-	// Validate query token configuration
-	if !h.QueryToken.Empty() && h.QueryKey == "" {
-		return errors.New("query_key must be set when query_token is provided")
 	}
 
 	// Create the client
@@ -94,15 +83,15 @@ func (h *intamsys) Init() error {
 	return nil
 }
 
-func (h *intamsys) SetParserFunc(fn telegraf.ParserFunc) {
+func (h *INTAMSYS) SetParserFunc(fn telegraf.ParserFunc) {
 	h.parserFunc = fn
 }
 
-func (h *intamsys) Start(_ telegraf.Accumulator) error {
+func (h *INTAMSYS) Start(_ telegraf.Accumulator) error {
 	return nil
 }
 
-func (h *intamsys) Gather(acc telegraf.Accumulator) error {
+func (h *INTAMSYS) Gather(acc telegraf.Accumulator) error {
 	var wg sync.WaitGroup
 	for _, u := range h.URLs {
 		wg.Add(1)
@@ -119,53 +108,22 @@ func (h *intamsys) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (h *intamsys) Stop() {
+func (h *INTAMSYS) Stop() {
 	if h.client != nil {
 		h.client.CloseIdleConnections()
 	}
 }
 
-// Prepares the URL with optional query parameter from secret
-func (h *intamsys) prepareURL(originalURL string) (string, error) {
-	// Parse the original URL
-	parsedURL, err := url.Parse(originalURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse URL: %w", err)
-	}
-
-	// If query token and key are set, add the query parameter
-	if !h.QueryToken.Empty() {
-		// Get the token value
-		tokenSecret, err := h.QueryToken.Get()
-		if err != nil {
-			return "", fmt.Errorf("failed to get query token: %w", err)
-		}
-		defer tokenSecret.Destroy()
-
-		// DEBUGGING: Print the query token to stdout
-		fmt.Printf("DEBUG: Query Token Retrieved: %s\n", tokenSecret.String())
-
-		// Get query parameters
-		query := parsedURL.Query()
-		
-		// Add or replace the query parameter
-		query.Set(h.QueryKey, tokenSecret.String())
-		
-		// Update the URL's RawQuery
-		parsedURL.RawQuery = query.Encode()
-	}
-
-	return parsedURL.String(), nil
-}
-
 // Gathers data from a particular URL
-func (h *intamsys) gatherURL(acc telegraf.Accumulator, originalURL string) error {
-	// Prepare URL with potential query parameter
-	url, err := h.prepareURL(originalURL)
-	if err != nil {
-		return err
-	}
-
+// Parameters:
+//
+//	acc    : The telegraf Accumulator to use
+//	url    : endpoint to send request to
+//
+// Returns:
+//
+//	error: Any error that may have occurred
+func (h *INTAMSYS) gatherURL(acc telegraf.Accumulator, url string) error {
 	body := makeRequestBodyReader(h.ContentEncoding, h.Body)
 	request, err := http.NewRequest(h.Method, url, body)
 	if err != nil {
@@ -249,11 +207,11 @@ func (h *intamsys) gatherURL(acc telegraf.Accumulator, originalURL string) error
 		return fmt.Errorf("parsing metrics failed: %w", err)
 	}
 
-	if len(metrics) == 0 {
-		once.Do(func() {
-			h.Log.Debug(noMetricsCreatedMsg)
-		})
-	}
+	//if len(metrics) == 0 {
+	//	once.Do(func() {
+	//		h.Log.Debug(internal.NoMetricsCreatedMsg)
+	//	})
+	//}
 
 	for _, metric := range metrics {
 		if !metric.HasTag("url") {
@@ -265,11 +223,44 @@ func (h *intamsys) gatherURL(acc telegraf.Accumulator, originalURL string) error
 	return nil
 }
 
-// ... (rest of the existing code remains the same)
+func (h *INTAMSYS) setRequestAuth(request *http.Request) error {
+	if h.Username.Empty() && h.Password.Empty() {
+		return nil
+	}
+
+	username, err := h.Username.Get()
+	if err != nil {
+		return fmt.Errorf("getting username failed: %w", err)
+	}
+	defer username.Destroy()
+
+	password, err := h.Password.Get()
+	if err != nil {
+		return fmt.Errorf("getting password failed: %w", err)
+	}
+	defer password.Destroy()
+
+	request.SetBasicAuth(username.String(), password.String())
+
+	return nil
+}
+
+func makeRequestBodyReader(contentEncoding, body string) io.Reader {
+	if body == "" {
+		return nil
+	}
+
+	var reader io.Reader = strings.NewReader(body)
+	//if contentEncoding == "gzip" {
+	//	return internal.CompressWithGzip(reader)
+	//}
+
+	return reader
+}
 
 func init() {
-	inputs.Add("intamsys", func() telegraf.Input {
-		return &intamsys{
+	inputs.Add("http", func() telegraf.Input {
+		return &INTAMSYS{
 			Method: "GET",
 		}
 	})
