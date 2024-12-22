@@ -3,6 +3,7 @@
 package intamsys
 
 import (
+	"compress/gzip"
 	"context"
 	_ "embed"
 	"errors"
@@ -25,6 +26,8 @@ import (
 var sampleConfig string
 
 var once sync.Once
+
+const NoMetricsCreatedMsg = "No metrics were created from a message. Verify your parser settings. This message is only printed once."
 
 type INTAMSYS struct {
 	URLs            []string `toml:"urls"`
@@ -207,11 +210,11 @@ func (h *INTAMSYS) gatherURL(acc telegraf.Accumulator, url string) error {
 		return fmt.Errorf("parsing metrics failed: %w", err)
 	}
 
-	//if len(metrics) == 0 {
-	//	once.Do(func() {
-	//		h.Log.Debug(internal.NoMetricsCreatedMsg)
-	//	})
-	//}
+	if len(metrics) == 0 {
+		once.Do(func() {
+			h.Log.Debug(NoMetricsCreatedMsg)
+		})
+	}
 
 	for _, metric := range metrics {
 		if !metric.HasTag("url") {
@@ -245,15 +248,45 @@ func (h *INTAMSYS) setRequestAuth(request *http.Request) error {
 	return nil
 }
 
+func CompressWithGzip(data io.Reader) io.ReadCloser {
+	pipeReader, pipeWriter := io.Pipe()
+	gzipWriter := gzip.NewWriter(pipeWriter)
+
+	// Start copying from the uncompressed reader to the output reader
+	// in the background until the input reader is closed (or errors out).
+	go func() {
+		// This copy will block until "data" reached EOF or an error occurs
+		_, err := io.Copy(gzipWriter, data)
+
+		// Close the compression writer and make sure we do not overwrite
+		// the copy error if any.
+		gzipErr := gzipWriter.Close()
+		if err == nil {
+			err = gzipErr
+		}
+
+		// Subsequent reads from the output reader (connected to "pipeWriter"
+		// via pipe) will return the copy (or closing) error if any to the
+		// instance reading from the reader returned by the CompressWithGzip
+		// function. If "err" is nil, the below function will correctly report
+		// io.EOF.
+		pipeWriter.CloseWithError(err)
+	}()
+
+	// Return a reader which then can be read by the caller to collect the
+	// compressed stream.
+	return pipeReader
+}
+
 func makeRequestBodyReader(contentEncoding, body string) io.Reader {
 	if body == "" {
 		return nil
 	}
 
 	var reader io.Reader = strings.NewReader(body)
-	//if contentEncoding == "gzip" {
-	//	return internal.CompressWithGzip(reader)
-	//}
+	if contentEncoding == "gzip" {
+		return CompressWithGzip(reader)
+	}
 
 	return reader
 }
